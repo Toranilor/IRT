@@ -42,7 +42,27 @@ def estimate_ability_l1(b, u, n_iter=100, theta=0):
     return theta
 
 def estimate_ability_l2(b, a, u, n_iter=100, theta=0):
-    # I NEED TO WRITE THIS
+    """
+    A function to estimate the ability of a student, assuming the test items
+    follow a 1st degree logistic.
+
+    b is a j-length vector of the difficulty for each item
+    a is a j-length vector of the discrimination for each item
+    u is a j-length vector of the student's response for each item (between 0 and 1)
+    n_iter is the number of iterations of ability to perform
+
+    Using equations from page 70 of "The Basics of Item Response Theory Using R"
+    """
+    assert(b.shape == u.shape)
+    assert(a.shape == u.shape)
+
+    for i in range(n_iter):
+        Prob = logistic_2(theta, a, b)
+        Q = 1-Prob
+        numerator = np.sum(u-Prob)
+        denominator = -np.sum(Prob*Q)
+        theta -= numerator/denominator
+
     return theta
 
 
@@ -73,8 +93,8 @@ def l2_wrapper(x, **kwargs):
         r/f vector
     """
     assert np.size(x) == 2
-    a = x[0]
-    b = x[1]
+    b = x[0]
+    a = x[1]
 
     theta = kwargs.get('theta')
     r_on_f = kwargs.get('r_on_f')

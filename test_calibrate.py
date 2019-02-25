@@ -125,14 +125,23 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
             if n_param == 2:
                 theta_estimates[j] = IRT.estimate_ability_l2(
                     theta=theta_estimates[j], b=q_diff[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), 
-                    a=q_disc[inclusion_IDs],
+                    a=q_disc[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
                     u=scores[j, inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), n_iter=1)
-            if n_param == 2:
+            if n_param == 3:
                 theta_estimates[j] = IRT.estimate_ability_l3(
                     theta=theta_estimates[j], b=q_diff[inclusion_IDs], 
-                    a=q_disc[inclusion_IDs], c=q_chance[inclusion_IDs],
+                    a=q_disc[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
+                    c=q_chance[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
                     u=scores[j, inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), n_iter=1)
 
     # Another correction from the book
     theta_estimates = theta_estimates*(num_questions-2)/(num_questions-1)
-    return q_diff, theta_estimates
+    q_characteristics = list()
+    q_characteristics.append(q_diff)
+
+    if n_param > 1:
+        q_characteristics.append(q_disc)
+    if n_param > 2:
+        q_characteristics.append(q_chance)
+
+    return q_characteristics, theta_estimates
