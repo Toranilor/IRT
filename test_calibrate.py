@@ -85,9 +85,15 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
     theta_estimates = np.log(user_scores/(qns_per_student-user_scores))[:, 0]
     print('Beginning Iterations')
 
+    # Start lists for residuals
+    theta_resids = list()
+    q_resids = list()
+
     for i in range(n_iter):
         print("iteration" + str(i))
         # Perform an estimate of question difficulty based on student responses
+        q_diff_prev = np.copy(q_diff)
+        q_resids.append(np.linalg.norm(q_diff-q_diff_prev))
         for j in range(num_questions):
             # Compress responses (remove students who did not attempt this q)
             inclusion_IDs = np.argwhere(~np.isnan(scores[:, j]))
@@ -110,11 +116,12 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
                 q_disc[j] = q_guess[1]
             if n_param > 2:
                 q_chance = q_guess[2]
-
+        q_resids.append(np.linalg.norm(q_diff-q_diff_prev))
         # "Anchor" our metric
         q_diff = q_diff - np.mean(q_diff)
 
-        # Perform an estimate of student ability based on question difficulty      
+        # Perform an estimate of student ability based on question difficulty 
+        theta_prev = np.copy(theta_estimates)     
         for j in range(num_students):
             # Compress responses again (remove questions the student did not attempt)
             inclusion_IDs = np.argwhere(~np.isnan(scores[j, :]))
@@ -133,6 +140,8 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
                     a=q_disc[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
                     c=q_chance[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
                     u=scores[j, inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), n_iter=1)
+        theta_resids.append(np.linalg.norm(theta_estimates-theta_prev))
+
 
     # Another correction from the book
     theta_estimates = theta_estimates*(num_questions-2)/(num_questions-1)
@@ -143,5 +152,15 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
         q_characteristics.append(q_disc)
     if n_param > 2:
         q_characteristics.append(q_chance)
+
+    plt.plot(theta_resids) 
+    plt.xlabel("Iterations") 
+    plt.ylabel("Residuals")
+    plt.title("Theta Estimates Convergence")  
+    plt.figure()
+    plt.plot(q_resids) 
+    plt.xlabel("Iterations") 
+    plt.ylabel("Residuals")
+    plt.title("difficulty Estimates Convergence")  
 
     return q_characteristics, theta_estimates
