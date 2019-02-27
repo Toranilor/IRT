@@ -23,6 +23,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import random
 import scipy.optimize
+import logging
 
 
 def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
@@ -31,6 +32,11 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
     	dataset is a numpy array with student data, scores for each item should be out of 1
     n_param is the number of parameters of logistic model we are using.
     """
+
+    # Start the logger.
+    logging.basicConfig(filename="Debug.log", level=logging.DEBUG, filemode='w+')
+    logging.debug('Beginning of Logging')
+
     # Assign functions based on n_param
     if n_param == 1:
         # 1 dimensional model, aka rach model
@@ -67,7 +73,7 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
 
     sum_score = np.zeros((num_questions, 1))
     for i in range(num_questions):
-        q_diff[i] = 3-np.sum(scores[:, i])/num_students*6
+        q_diff[i] = 3-np.nanmean(scores[:, i])*6
         if n_param > 1:
             q_disc[i] = 1
         if n_param > 2:
@@ -84,13 +90,20 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
 
     theta_estimates = np.log(user_scores/(qns_per_student-user_scores))[:, 0]
     print('Beginning Iterations')
-
+    logging.debug("Initial Theta Estimates:")
+    logging.debug(list(theta_estimates))
+    logging.debug("Initial difficulty Estimates")
+    logging.debug(list(q_diff))
+    if n_param > 1:
+    	logging.debug("Initial discrimination Estimates")
+    	logging.debug(q_disc)
     # Start lists for residuals
     theta_resids = list()
     q_resids = list()
 
     for i in range(n_iter):
         print("iteration" + str(i))
+        logging.debug("iteration" + str(i))
         # Perform an estimate of question difficulty based on student responses
         q_diff_prev = np.copy(q_diff)
         q_resids.append(np.linalg.norm(q_diff-q_diff_prev))
@@ -119,7 +132,11 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
         q_resids.append(np.linalg.norm(q_diff-q_diff_prev))
         # "Anchor" our metric
         q_diff = q_diff - np.mean(q_diff)
-
+        logging.debug('q_diff:')
+        logging.debug(list(q_diff))
+        if n_param > 1:
+        	logging.debug('q_disc')
+        	logging.debug(list(q_disc))
         # Perform an estimate of student ability based on question difficulty 
         theta_prev = np.copy(theta_estimates)     
         for j in range(num_students):
@@ -141,7 +158,8 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
                     c=q_chance[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
                     u=scores[j, inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), n_iter=1)
         theta_resids.append(np.linalg.norm(theta_estimates-theta_prev))
-
+        logging.debug('Theta:')
+        logging.debug(list(theta_estimates))
 
     # Another correction from the book
     theta_estimates = theta_estimates*(num_questions-2)/(num_questions-1)
