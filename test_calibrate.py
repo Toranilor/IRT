@@ -37,19 +37,29 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
     logging.basicConfig(filename="Debug.log", level=logging.DEBUG, filemode='w+')
     logging.debug('Beginning of Logging')
 
+    # Set a parameter absolute value that will prompt an error message
+    error_range = 10
+
+
     # Assign functions based on n_param
     if n_param == 1:
         # 1 dimensional model, aka rach model
         curve_func = IRT.logistic_1
         fit_func = IRT.l1_wrapper
+        disc = False
+        chance = False
     if n_param == 2:
         # 2 dimensional model, with both dificulty and discrimination.
         curve_func = IRT.logistic_2
         fit_func = IRT.l2_wrapper
+        disc = True
+        chance = False
     if n_param == 3:
         # 3 dimensional model, difficulty, discrimination and guess-correctly chance
         curve_func = IRT.logistic_3
         fit_func = IRT.l3_wrapper
+        disc = True
+        chance = True
 
     num_students = scores.shape[0]
     num_questions = scores.shape[1]
@@ -62,11 +72,11 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
     # Generate a difficulty vector (beginning estimate!)
     q_diff = np.zeros((num_questions, 1))
     guess_init = 0
-    if n_param > 1:
+    if disc:
         # Generate a discrimination vector
         q_disc = np.zeros((num_questions, 1))
         guess_init = [0, 1]
-    if n_param > 2:
+    if chance:
         # Generate a guessing vector
         q_chance = np.zeros((num_questions, 1))
         guess_init = [0, 1, 0.25]
@@ -74,9 +84,9 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
     sum_score = np.zeros((num_questions, 1))
     for i in range(num_questions):
         q_diff[i] = 3-np.nanmean(scores[:, i])*6
-        if n_param > 1:
+        if disc:
             q_disc[i] = 1
-        if n_param > 2:
+        if chance:
             q_chance[i] = 0.25
         sum_score[i] = np.sum(np.nan_to_num(scores[:, i]), 0)
 
@@ -94,7 +104,7 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
     logging.debug(list(theta_estimates))
     logging.debug("Initial difficulty Estimates")
     logging.debug(list(q_diff))
-    if n_param > 1:
+    if disc:
     	logging.debug("Initial discrimination Estimates")
     	logging.debug(q_disc)
     # Start lists for residuals
@@ -114,8 +124,6 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
             theta_temp = theta_estimates[inclusion_IDs]
             scores_temp = scores[inclusion_IDs, j]
 
-            # Group close-by thetas together (?)
-
             # Generate kwargs to pass to logistic function
             kwargs = {
                 "theta": theta_temp,
@@ -125,16 +133,36 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
             q_guess = scipy.optimize.least_squares(fit_func, x0=guess_init, kwargs=kwargs).x
 
             q_diff[j] = q_guess[0]
-            if n_param > 1:
+            if disc:
                 q_disc[j] = q_guess[1]
-            if n_param > 2:
+            if chance:
                 q_chance = q_guess[2]
+        # Create the residuals and append them  
         q_resids.append(np.linalg.norm(q_diff-q_diff_prev))
+
+        # Check if we have any values that are outside our norm and exit!
+        q_set = np.arange(np.size(q_diff))
+        diff_errors = np.abs(q_diff)>error_range
+        if True in diff_errors:
+        	logging.debug("Difficulty out of bounds!")
+        	logging.debug("Questions " + str(q_set[diff_errors]) + " have values of:")
+        	logging.debug(q_diff[diff_errors])
+        	print("RUN TERMINATED DUE TO OUT OF BOUNDS ERROR - CHECK LOGS")
+        	return 0, 0
+
+        	if disc:
+        		disc_erors = np.abs(q_disc)>error_range
+        		if True in disc_erors:
+        			logging.debug("Discrimination out of bounds!")
+        			logging.debug("Questions " + str(q_set[disc_erors]) + " have values of:")
+        			logging.debug(q_disc[disc_erors])
+        			print("RUN TERMINATED DUE TO OUT OF BOUNDS ERROR - CHECK LOGS")
+        			return 0, 0
         # "Anchor" our metric
         q_diff = q_diff - np.mean(q_diff)
         logging.debug('q_diff:')
         logging.debug(list(q_diff))
-        if n_param > 1:
+        if disc:
         	logging.debug('q_disc')
         	logging.debug(list(q_disc))
         # Perform an estimate of student ability based on question difficulty 
@@ -158,6 +186,17 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
                     c=q_chance[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
                     u=scores[j, inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), n_iter=1)
         theta_resids.append(np.linalg.norm(theta_estimates-theta_prev))
+
+        # Check for a value exceeding our error check threshold
+        theta_set = np.arange(np.size(theta_estimates))
+        theta_errors = np.abs(theta_estimates)>error_range
+        if True in theta_errors:
+        	logging.debug("Theta estimate out of bounds!")
+        	logging.debug("Students " + str(theta_set[theta_errors]) + " have values of:")
+        	logging.debug(theta_estimates[theta_errors])
+        	print("RUN TERMINATED DUE TO OUR OF BOUNDS ERROR - CHECK LOGS")
+        	return 0, 0 
+
         logging.debug('Theta:')
         logging.debug(list(theta_estimates))
 
@@ -166,9 +205,9 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
     q_characteristics = list()
     q_characteristics.append(q_diff)
 
-    if n_param > 1:
+    if disc:
         q_characteristics.append(q_disc)
-    if n_param > 2:
+    if chance:
         q_characteristics.append(q_chance)
 
     plt.plot(theta_resids) 
