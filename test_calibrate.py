@@ -26,7 +26,7 @@ import scipy.optimize
 import logging
 
 
-def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
+def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0, shunt_values=False):
     """
     This utility applies calibration to the test:
     	dataset is a numpy array with student data, scores for each item should be out of 1
@@ -110,7 +110,7 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
     # Start lists for residuals
     theta_resids = list()
     q_resids = list()
-
+    q_guess = guess_init
     for i in range(n_iter):
         print("iteration" + str(i))
         logging.debug("iteration" + str(i))
@@ -129,35 +129,48 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
                 "theta": theta_temp,
                 "r_on_f": scores_temp
             }
-
-            q_guess = scipy.optimize.least_squares(fit_func, x0=guess_init, kwargs=kwargs).x
+            # Generate our starting guess (it's the previous value)
+            guess = list(q_diff[j])
+            if n_param == 2:
+            	guess.append(q_disc[j])
+            elif n_param == 3:
+            	guess.append(q_chance[j])
+            q_guess = scipy.optimize.least_squares(fit_func, x0=guess, kwargs=kwargs).x
 
             q_diff[j] = q_guess[0]
             if disc:
                 q_disc[j] = q_guess[1]
             if chance:
-                q_chance = q_guess[2]
+                q_chance[j] = q_guess[2]
         # Create the residuals and append them  
         q_resids.append(np.linalg.norm(q_diff-q_diff_prev))
 
         # Check if we have any values that are outside our norm and exit!
         q_set = np.arange(np.size(q_diff))
-        diff_errors = np.abs(q_diff)>error_range
+        diff_errors = np.array(np.abs(q_diff)>error_range)[:,0]
         if True in diff_errors:
         	logging.debug("Difficulty out of bounds!")
         	logging.debug("Questions " + str(q_set[diff_errors]) + " have values of:")
         	logging.debug(q_diff[diff_errors])
-        	print("RUN TERMINATED DUE TO OUT OF BOUNDS ERROR - CHECK LOGS")
-        	return 0, 0
+        	if shunt_values:
+        		print("Difficulty" + str(q_set[diff_errors]) + "Shunted!")
+        		q_diff[diff_errors] = 0
+        	else:
+        		print("RUN TERMINATED DUE TO OUT OF BOUNDS ERROR - CHECK LOGS")
+        		return 0, 0
 
-        	if disc:
-        		disc_erors = np.abs(q_disc)>error_range
-        		if True in disc_erors:
-        			logging.debug("Discrimination out of bounds!")
-        			logging.debug("Questions " + str(q_set[disc_erors]) + " have values of:")
-        			logging.debug(q_disc[disc_erors])
-        			print("RUN TERMINATED DUE TO OUT OF BOUNDS ERROR - CHECK LOGS")
-        			return 0, 0
+        if disc:
+        	disc_erors = np.array(np.abs(q_disc)>error_range)[:,0]
+        	if True in disc_erors:
+        		logging.debug("Discrimination out of bounds!")
+       			logging.debug("Questions " + str(q_set[disc_erors]) + " have values of:")
+       			logging.debug(q_disc[disc_erors])
+       			if shunt_values:
+       				print("Discrimination"  + str(q_set[disc_erors]) + " shunted!")
+       				q_disc[disc_erors] = 1
+       			else:
+       				print("RUN TERMINATED DUE TO OUT OF BOUNDS ERROR - CHECK LOGS")
+       				return 0, 0
         # "Anchor" our metric
         q_diff = q_diff - np.mean(q_diff)
         logging.debug('q_diff:')
@@ -175,9 +188,14 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
                     theta=theta_estimates[j], b=q_diff[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), 
                     u=scores[j, inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), n_iter=1)
             if n_param == 2:
-                theta_estimates[j] = IRT.estimate_ability_l2(
+            	## The L2 estimate ability function doesn't work - at the moment I only use the l1.
+            	## This means that the discrimination doesn't impact on our value for theta.
+                #theta_estimates[j] = IRT.estimate_ability_l2(
+                #    theta=theta_estimates[j], b=q_diff[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), 
+                #    a=q_disc[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
+                #    u=scores[j, inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), n_iter=1)
+                theta_estimates[j] = IRT.estimate_ability_l1(
                     theta=theta_estimates[j], b=q_diff[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), 
-                    a=q_disc[inclusion_IDs].reshape((np.size(inclusion_IDs), 1)),
                     u=scores[j, inclusion_IDs].reshape((np.size(inclusion_IDs), 1)), n_iter=1)
             if n_param == 3:
                 theta_estimates[j] = IRT.estimate_ability_l3(
@@ -194,8 +212,12 @@ def apply_calibration(scores, n_param=1, n_iter=1000, qns_per_student=0):
         	logging.debug("Theta estimate out of bounds!")
         	logging.debug("Students " + str(theta_set[theta_errors]) + " have values of:")
         	logging.debug(theta_estimates[theta_errors])
-        	print("RUN TERMINATED DUE TO OUR OF BOUNDS ERROR - CHECK LOGS")
-        	return 0, 0 
+        	if shunt_values:
+        		print("Theta " + str(theta_set[theta_errors]) + "Shunted!")
+        		theta_estimates[theta_errors] = 0
+        	else:
+        		print("RUN TERMINATED DUE TO OUR OF BOUNDS ERROR - CHECK LOGS")
+        		return 0, 0 
 
         logging.debug('Theta:')
         logging.debug(list(theta_estimates))

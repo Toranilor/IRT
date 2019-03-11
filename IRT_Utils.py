@@ -44,7 +44,7 @@ def estimate_ability_l1(b, u, n_iter=100, theta=0):
 def estimate_ability_l2(b, a, u, n_iter=100, theta=0):
     """
     A function to estimate the ability of a student, assuming the test items
-    follow a 1st degree logistic.
+    follow a 2nd degree logistic.
 
     b is a j-length vector of the difficulty for each item
     a is a j-length vector of the discrimination for each item
